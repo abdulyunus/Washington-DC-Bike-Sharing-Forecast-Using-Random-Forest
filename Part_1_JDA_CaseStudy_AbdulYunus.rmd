@@ -1,0 +1,691 @@
+---
+title : "Bike Sharing in Washington D.C. Demand Forecast"
+author: "Abdul Yunus Abdul Ghaffar"
+date  : "April 22, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#### Assignment Part 1
+Please make an explorative data analysis and build a prediction model for the hourly utilization "cnt" of this data set: <https://archive.ics.uci.edu/ml/datasets/Bike+Sharing+Dataset>. 
+Your solution will consist of a short analysis (text ~ 1 DIN A4 with additional pages for plots) and the relevant code your report is about (source files).
+
+- In your report, present only one model, that you think is most suitable for a business-case.
+Summarize your reasons for choosing this model.
+Report the mean absolute deviations.
+
+- Assume that the code you are writing is used in production in a daily prediction service and maintained by your colleagues.
+
+
+#### Solution - Part 1
+
+As per the instructions the data sets has been taken from the above mentioned link. There were 2 data sets I found on the location.
+
+1. day.csv
+2. hour.csv
+
+There was also a Readme.txt file found on the same location, which can help us to understand the background of this problem, data set, data set charecteristics etc.
+
+
+#### Approach
+Since the problem required to forecast number of users per hour, we will be using the below Machine learning algorithms to estimates the counts.
+
+-  Multiple Linear Regression
+-  Decision Tree
+-  Random Forest
+-  K Nearest Neighbor
+ 
+Lets start solving this problem first with Multiple linear regression.
+
+### Multiple Linear Regression
+
+The first task we will be doing here, to install all the required libraries. We have created a function in R, which can check, if any of these below package is available in the system (Already installed), in case if the package is not installed, this function, first installed the package and then load it.
+
+```{r echo = T, message = FALSE, warning=FALSE, results='hide'}
+gc()
+rm(list = ls(all = TRUE))
+
+# Installed the required packages using the below function.
+
+packages<-function(x){
+  x<-as.character(match.call()[[2]])
+  if (!require(x,character.only=TRUE)){
+    install.packages(pkgs=x,repos="http://cran.r-project.org")
+    require(x,character.only=TRUE)
+  }
+}
+
+packages(caret)
+packages(car)
+packages(caTools)
+packages(tree)
+packages(ISLR)
+packages(rpart)
+packages(rpart.plot)
+packages(randomForest)
+packages(e1071)
+packages(tidyverse)
+packages(mlbench)
+
+```
+
+#### Load the Data ( Input files)
+
+We will be loading the data input files from our local machine. The files is in '.csv' format.
+First, lets set the working directory. We are setting the working directory path where our input files are stored on the local machine.
+
+```{r warning=FALSE, results= F}
+# provide the path of the input files
+path <- "C:/Users/Abdul_Yunus/Desktop/Yunus_Personal/Learning/Case Study/JDA"
+
+# Set working directory
+setwd(path)
+```
+
+Now import the day.csv and hour.csv file from the local machine.
+```{r warning=FALSE, results= F}
+# Import day.csv file.
+day_df <- read.csv('day.csv', header = TRUE)
+
+# Import hour.csv file.
+hour_df <- read.csv('hour.csv', header = TRUE)
+```
+
+
+I would like to look at my data to understand it. A summary of data can help me here.
+Will have an overview of the individual data sets using the **summary** and **str** function.
+
+Let's check the summary of the data set
+
+```{r}
+summary(day_df)
+summary(hour_df)
+```
+
+We can also check the variable type by using function `str`
+
+```{r}
+str(day_df)
+str(hour_df)
+```
+
+Lets check if we do have any missing value in the data used.
+
+```{r}
+# Checking missing value in day_df data
+
+sapply(day_df, function(x) sum(is.na(x)))
+
+
+# Checking missing value in hour_df data
+
+sapply(hour_df, function(x) sum(is.na(x)))
+```
+
+There are some variables, that needs to be as factor. Lets convert some of numerical variable into factors into both the data.
+```{r}
+# Convert the numeric variable into factor for day_df data
+day_df$season <- as.factor(day_df$season)
+day_df$yr <- as.factor(day_df$yr)
+day_df$mnth <- as.factor(day_df$mnth)
+day_df$holiday <- as.factor(day_df$holiday)
+day_df$weekday <- as.factor(day_df$weekday)
+day_df$workingday <- as.factor(day_df$workingday)
+day_df$weathersit <- as.factor(day_df$weathersit)
+
+
+# Convert the numeric variable into factor for hour_df data
+hour_df$season <- as.factor(hour_df$season)
+hour_df$yr <- as.factor(hour_df$yr)
+hour_df$mnth <- as.factor(hour_df$mnth)
+hour_df$holiday <- as.factor(hour_df$holiday)
+hour_df$weekday <- as.factor(hour_df$weekday)
+hour_df$workingday <- as.factor(hour_df$workingday)
+hour_df$weathersit <- as.factor(hour_df$weathersit)
+hour_df$hr <- as.factor(hour_df$hr)
+
+
+```
+
+Column 'instant' is simply the serial numbers, we can remove the column from both the data
+
+```{r}
+day_df <- day_df[,-1]
+hour_df <- hour_df[,-1]
+```
+
+
+Lets do the Exploratory Data Analysis on the hour_df data.
+Lets try to understand how season and weather has impact on bike renting?.  We can plot Number of bikes rent by Seasons for every hour.
+
+```{r}
+# Get the average count of bikes rent by season and hr.
+season_summary_by_hour <- hour_df %>%
+  select(season, hr, cnt) %>%
+  group_by(season, hr) %>%
+  summarise(Count = mean(cnt)) 
+
+# Lets plot this
+ggplot(hour_df, aes(x= hr, y= Count, color=as.factor(season)))+
+  geom_point(data = season_summary_by_hour, aes(group = as.factor(season)))+
+  geom_line(data = season_summary_by_hour, aes(group = as.factor(season)))+
+  ggtitle("Bikes Rent By Season")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_colour_hue('Season',breaks = levels(as.factor(season_summary_by_hour$season)), labels=c('spring', 'summer', 'fall', 'winter'))
+```
+
+
+From the above plot wecan say
+
+- There are more rental in morning(from 7-9th hour) and evening(17-19th hour)
+- People rent bikes more in Fall, and much less in Spring
+
+
+We ca also check how season and weather has impact on bike renting?.  We can plot Number of bikes rent by Seasons for every hour.
+
+```{r}
+# Get the average count of bikes rent by weather and hr.
+
+weather_summary_by_hour <- hour_df %>%
+  select(weathersit, hr, cnt) %>%
+  group_by(weathersit, hr) %>%
+  summarise(Count = mean(cnt)) 
+
+ggplot(hour_df, aes(x= hr, y= Count, color= as.factor(weathersit)))+
+  geom_point(data = weather_summary_by_hour, aes(group = weathersit))+
+  geom_line(data = weather_summary_by_hour, aes(group = weathersit))+
+  ggtitle("Bikes Rent By Weather")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_colour_hue('Weathersit',breaks = levels(as.factor(hour_df$weathersit)), labels=c('Good', 'Normal', 'Bad', 'Very Bad'))
+
+
+```
+
+From the above plot wecan say
+
+- People rent bikes **more** when **weather is good**.
+- We see bike rent only at 18th hour when weather is very bad
+
+
+** Does Working day and Non Working day has any impact on bike renting ? **
+
+Now we can plot bike rental activity depending on the type of day (working days or non-working days)
+
+```{r}
+# Taking subset of dat hour_df data for working day.
+hour_df.wd <- subset(hour_df, workingday == 1)
+
+# Plotting for the subset data
+ggplot(hour_df.wd, aes( x = hr, y = cnt))+
+  geom_point(position = position_jitter(w = 1, h = 0), aes(color = temp))+
+  scale_color_gradient(low = "#88d8b0", high = "#ff6f69") + ggtitle("Bike Count on Working Days")
+```
+
+
+
+From the above plot we can see
+
+- On working days, bike rental acitivty **peaks in the morning (~8PM) and in the afternoon (~5PM to 6PM)**.
+
+
+```{r}
+# Taking subset of dat hour_df data for Non-working day.
+hour_df.nwd <- subset(hour_df, workingday == 0)
+
+# Plotting for the subset data
+ggplot(hour_df.nwd, aes( x = hr, y = cnt))+
+  geom_point(position = position_jitter(w = 1, h = 0), aes(color = temp))+
+  scale_color_gradient(low = "#88d8b0", high = "#ff6f69") + ggtitle("Bike Count on Working Days")
+```
+
+
+On non-working days we see a gradual increase in bike rental activity that peaks between 1PM and 3PM.
+
+The plots illustrate the working days have peak bike activity during the morning (around 8am) and right after work (around 6pm), with some lunchtime activity. Whereas the non-working days have a steady rise and fall for the afternoon.
+
+** Lets Fit Our First Model **
+
+Our first model we will be try is Multiple linear regression. We will be using hour_df data for model building as the day_df is actually aggregated data of hour_df.
+
+I have observe some categorical variable we have in the data which is labled. We can do the one-hot encoding on those variables.
+
+Lets do all this on the  hour_df data set as we are using this dataset for model building
+
+
+```{r}
+# One Hot Encoding for season
+hour_df$season_2 <- ifelse(hour_df$season ==2,1,0)
+hour_df$season_3 <- ifelse(hour_df$season ==3,1,0)
+hour_df$season_4 <- ifelse(hour_df$season ==4,1,0)
+
+# One Hot Encoding for weathersit
+hour_df$weathersit_2 <- ifelse(hour_df$weathersit ==2,1,0)
+hour_df$weathersit_3 <- ifelse(hour_df$weathersit ==3,1,0)
+hour_df$weathersit_4 <- ifelse(hour_df$weathersit ==4,1,0)
+```
+
+
+
+Since we have created dummy variables for season, weathersit. Lets drop these variables from data and keep only respective dummy variables.
+
+```{r}
+# Dropping variables 'season' and 'weather'.
+final_df <- subset(hour_df, select = - c(season, weathersit))
+```
+
+
+
+ Since we have all information regarding date, month and time, we can remove the **dteday** column from the data
+ Column cnt is the sum of  casual and registered, we can also remove these variables from our data.
+```{r}
+# dropping variables 'dteday', 'casual', 'registered'
+final_df <- subset(final_df, select = -c(dteday, casual, registered))
+```
+
+
+**Data partitioning** 
+
+Before building our model, we can partition our data into train and test data. We will be using the train data for building our and we will validate our model performance on the test data.
+
+Lets split data into 75%  for training and 25% for testing. We can change the proportion if required.
+
+```{r}
+set.seed(123)
+id <- sample.split(Y = final_df$cnt, SplitRatio = 0.75)
+train_df <- subset(final_df, id == "TRUE")
+test_df <- subset(final_df, id == "FALSE")
+```
+
+We will put all the feature variables once in our model against the target variable and check how our model performs.
+Lets first fit a regression model on this data using all the variables
+
+```{r}
+# Fitting the multiple linear regression model
+m1 <- lm(formula = cnt ~., data = train_df)
+
+# Checking summary to interpretate of the model.
+summary(m1)
+```
+
+
+The model summary can tell us that the Adjuested R-square which is around 0.69. Impressive !!
+Since we have put all the variables in our model, many variables are not significant, we can put only selected variables in our model and check the model performance.
+
+We can use `StepAIC` function from `MASS` package to select the variables for our model.
+
+```{r warning=FALSE}
+# Lets load the library MASS
+packages(MASS)
+var_select <- stepAIC(m1, direction = 'both')
+
+# Since some of the dplyr functions doesnt work when we are using MASS library, need to remove it and later we will install it.
+detach("package:MASS", unload=TRUE) 
+
+```
+
+After running StepAIc for both forward and backword, We got the selected variables.
+These variables data can directly be taken from the StepAIC output. We will save this data seperate.
+
+```{r}
+data.selected.variables <- var_select$model
+```
+
+Lets use this data.selected.variable to fit out model.
+
+```{r}
+# Fitting the multiple linear regression model using selected variables after using StepAIC
+m2 <- lm(formula = cnt ~., data = data.selected.variables)
+summary(m2)
+```
+
+Almost all the vriables used in this model are significant and we got similar Adjusted R-square here (0.68).
+
+
+Lets do the prediction using the predict function and do the prediction on test data.
+
+
+```{r}
+pred <- predict(object = m2, newdata = test_df)
+```
+
+Since we are predicting counts of user renting bike. These numbers should be positive.
+Lets do a check if we can get all the positive values in the prediction on test data.
+
+```{r}
+test_df_check <- cbind(test_df,pred)
+test_df_check$Validation <- ifelse(test_df_check$pred <0,1,0)
+sum(test_df_check$Validation)
+```
+
+Since the model is predicting negative values of the outcome, we can try and transfor the target variable, we can take natural log of the target variable and then build the model.
+
+Lets try this.
+
+```{r}
+m3 <- lm(formula = log(cnt) ~., data = data.selected.variables)
+summary(m3)
+
+```
+
+Lets do the prediction using the predict function and do the prediction on test data.
+SInce we have applied log onto the Target variable, we need to used exponential function to get the correct prediction.
+ 
+```{r}
+pred <- exp(predict(object = m3, newdata = test_df))
+
+```
+
+We can again do the validation for negative values.
+
+```{r}
+test_df_check <- cbind(test_df,pred)
+test_df_check$Validation <- ifelse(test_df_check$pred <0,1,0)
+sum(test_df_check$Validation)
+
+```
+
+Great, after applying natural log on the target variable, we didn't get any negative value.
+Lets check the accuracy of this model.
+
+```{r}
+packages(DescTools)
+RMSE_MLR_m3 <- RMSE(x =  pred, ref = test_df$cnt, na.rm = T, )
+MAD_MLR_m3  <- sum(abs(test_df_check$pred - mean(test_df_check$pred))/length(test_df_check$pred))
+MAPE_MLR_m3 <- mean(abs((test_df_check$cnt - test_df_check$pred)/test_df_check$cnt)*100)
+
+MLR_Accuracy <- data.frame(RMSE_MLR_m3, MAD_MLR_m3,MAPE_MLR_m3)
+MLR_Accuracy
+```
+
+
+We have tried this model and we check the accuracy of our model as well. Lets try some other algorithm on the data.
+Next we can try
+
+- Decision Tree
+- Random Forest
+- K Nearest Neighbor
+
+Lets start with Decision Tree
+
+
+** Decision Tree **
+
+we create a decision tree model by calling the rpart function. 
+Let's first create a base model with default parameters and value on the training data. 
+
+```{r}
+tree1 <- rpart(cnt ~., data = train_df)
+```
+
+
+Lets plot the tree
+
+
+```{r}
+rpart.plot(tree1)
+```
+
+The model is ready, we can check the output by using the prediction function
+
+```{r}
+pred1 = predict(object = tree1, newdata = test_df)
+```
+
+
+Lets check if there is any negative value predicted.
+
+```{r}
+test_df_val = cbind(test_df, pred1)
+test_df_val$NegativeVal <- ifelse(test_df_val$pred1 < 0,1,0)
+# If we take the sum of all the values in the column 'NegativeVal' we can find the number of negative values.
+
+sum(test_df_val$NegativeVal)
+```
+
+
+
+Since the sum of the 'NegativeVal' column is zero, it means the algorithm is not predicting any negative value.
+
+
+Lets calculate RMSE (Root Mean Square Error) and MAD (Mean Absolute Deviation) and MAPE (Mean Absolute Percentage Error).
+
+```{r}
+test_df_val$Error <- test_df_val$cnt - test_df_val$pred1
+RMSE_Dectree1 <- sum(sqrt(mean((test_df_val$Error)^2)))
+MAD_Dectree1  <- sum(abs(test_df_val$pred1 - mean(test_df_val$pred1))/length(test_df_val$pred1))
+MAPE_Dectree1 <- mean(abs((test_df_val$cnt - test_df_val$pred1)/test_df_val$cnt)*100)
+Dec_tree_Accuracy <- data.frame(RMSE_Dectree1, MAD_Dectree1, MAPE_Dectree1)
+# Model Accuracy for the decision tree
+Dec_tree_Accuracy
+```
+
+Let check the comparison with the output of our regression model
+```{r}
+# Model accuracy for the Multiple Linear regression for comparision
+MLR_Accuracy
+```
+
+Using Decision Tree Model we can get the RMSE = 89, and MAD ~ 114 which comparatively better than a regression model
+We can try Random forest as well. 
+
+### Random Forest
+
+let build the random forest model on training data
+
+```{r}
+set.seed(123)
+rf1 = randomForest(cnt ~., data = train_df, mtry = ncol(train_df)-1)
+```
+
+
+
+if we check the Out of Bag Error (OOB estimate of error) - this represents the accuracy. lets print the model
+
+When we do classification - Accuracy is OOB
+When we do Regression - Accuracy is RMSE and R-sq
+
+Lets print the model
+```{r}
+print(rf1)
+```
+
+
+We can check the variable importance using betlow code.
+
+```{r}
+# Gives GINI Index (Priority of Variables)
+rf1$importance
+
+```
+
+
+prediction on the training data set can be done using the below codes
+```{r}
+pred_rf1 = predict(object = rf1, newdata = train_df)
+```
+
+We can also check if the model is producing any negative output. Lets check it.
+
+```{r}
+train_df_val = cbind(train_df, pred_rf1)
+train_df_val$NegativeVal <- ifelse(train_df_val$pred_rf1 < 0,1,0)
+
+# If we take the sum of all the values in the column 'NegativeVal' we can find the number of negative values.
+sum(train_df_val$NegativeVal)
+```
+
+
+Since the sum of the 'NegativeVal' column is zero, it means the algorithm is not predicting any negative value.
+
+Lets calculate RMSE (Root Mean Square Error) , MAD (Mean Absolute Deviation) and MAPE (Mean Absolute Percentage Error).
+
+
+```{r}
+train_df_val$Error <- train_df_val$cnt - train_df_val$pred_rf1
+# Calculate RMSE
+RMSE_train_rf1 <- sum(sqrt(mean((train_df_val$Error)^2)))
+# Calculate MAD
+MAD_train_rf1  <- sum(abs(train_df_val$pred_rf1 - mean(train_df_val$pred_rf1))/length(train_df_val$pred_rf1))
+# Calculate MAPE
+MAPE_train_rf1 <- mean(abs((train_df_val$cnt - train_df_val$pred_rf1)/train_df_val$cnt)*100)
+
+Accuracy_table <- data.frame(RMSE_Dectree1, MAD_Dectree1, MAPE_Dectree1, RMSE_train_rf1,MAD_train_rf1, MAPE_train_rf1)
+
+Accuracy_table
+```
+
+prediction on the test data set
+
+```{r}
+pred_rf_test = predict(object = rf1, newdata = test_df)
+```
+
+check if the model is producing any negative values
+
+```{r}
+test_df_val = cbind(test_df, pred_rf_test)
+test_df_val$NegativeVal <- ifelse(test_df_val$pred_rf_test < 0,1,0)
+# If we take the sum of all the values in the column 'NegativeVal' we can find the number of negative values.
+
+sum(test_df_val$NegativeVal)
+```
+
+
+Since the sum of the 'NegativeVal' column is zero, it means the algorithm is not predicting any negative value.
+
+Lets calculate RMSE, MAD and MAPE.
+
+```{r}
+test_df_val$Error <- test_df_val$cnt - test_df_val$pred_rf_test
+
+RMSE_test_rf1 <- sum(sqrt(mean((test_df_val$Error)^2)))
+
+MAD_test_rf1  <- sum(abs(test_df_val$pred_rf_test- mean(test_df_val$pred_rf_test))/length(test_df_val$pred_rf_test))
+
+MAPE_test_rf1 <- mean(abs((test_df_val$cnt - test_df_val$pred_rf_test)/test_df_val$cnt)*100)
+
+Accuracy_table <- data.frame(RMSE_Dectree1,  RMSE_train_rf1,RMSE_test_rf1 ,MAD_Dectree1,MAD_train_rf1,MAD_test_rf1,  MAPE_Dectree1, MAPE_train_rf1,MAPE_test_rf1)
+
+Accuracy_table
+
+```
+
+
+** Error rate of Random Forest **
+Lets plot the RF model to check the OBB - it actually tell us where OBB is steady or constant.
+This plot is also used to know how many tree to used for random forest
+
+```{r}
+plot(rf1)
+```
+
+From the plot, we can see that after **100 trees** the Error is steady and no more drop in the error value.
+Lets tune the model to find out mtry values. Put ntreeTry = 100 in the tuneRF function.
+
+```{r}
+t = tuneRF(train_df, train_df$cnt,
+           stepFactor = 1.2,
+           plot = T,
+           ntreeTry = 100,
+           improve = 0.05)
+```
+
+
+
+After tuning these parameter, we found that optimal mtry value could be 12.
+Let put these parameter in our model and re run it
+
+```{r}
+set.seed(1234)
+rf2 = randomForest(cnt ~., data = train_df,
+                   mtry = 12,
+                   ntree = 100,
+                   importance = T,
+                   proximity = T)
+print(rf2)
+```
+
+
+We can check the important variables
+```{r}
+
+# Gives GINI Index (Priority of Variables)
+rf2$importance
+```
+
+
+Prediction on the training data set
+```{r}
+pred_rf2 = predict(object = rf2, newdata = train_df)
+```
+
+Lets calculate RMSE, MAD and MAPE
+
+```{r}
+train_df_val$Error <- train_df_val$cnt - train_df_val$pred_rf2
+
+RMSE_train_rf2 <- sum(sqrt(mean((train_df_val$Error)^2)))
+
+MAD_train_rf2  <- sum(abs(train_df_val$pred_rf2 - mean(train_df_val$pred_rf2, na.rm = T))/length(train_df_val$pred_rf2))
+MAPE_train_rf2 <- mean(abs((train_df_val$cnt - train_df_val$pred_rf2)/train_df_val$cnt)*100)
+
+Accuracy_table_RMSE <- data.frame(RMSE_Dectree1, RMSE_train_rf1,RMSE_test_rf1 ,RMSE_train_rf2)
+Accuracy_table_MAD <- data.frame(MAD_Dectree1, MAD_train_rf1,MAD_test_rf1, MAD_train_rf2)
+Accuracy_table_MAPE <- data.frame(MAPE_Dectree1, MAPE_train_rf1,MAPE_test_rf1,MAPE_train_rf2)
+
+# lets see the tables
+Accuracy_table_RMSE
+Accuracy_table_MAD
+Accuracy_table_MAPE
+```
+
+
+
+
+** Prediction on the test data set **
+
+```{r}
+pred_rf_test = predict(object = rf2, newdata = test_df)
+```
+
+
+
+Lets calculate RMSE, MAD and MAPE.
+
+
+```{r}
+test_df_val$Error <- test_df_val$cnt - test_df_val$pred_rf_test
+
+RMSE_test_rf2 <- sum(sqrt(mean((test_df_val$Error)^2)))
+
+MAD_test_rf2  <- sum(abs(test_df_val$pred_rf_test- mean(test_df_val$pred_rf_test))/length(test_df_val$pred_rf_test))
+
+Accuracy_table_RMSE <- data.frame(RMSE_Dectree1, RMSE_train_rf1,RMSE_test_rf1 ,RMSE_train_rf2,RMSE_test_rf2)
+Accuracy_table_MAD <- data.frame(MAD_Dectree1, MAD_train_rf1,MAD_test_rf1, MAD_train_rf2,MAD_test_rf2)
+Accuracy_table_MAPE <- data.frame(MAPE_Dectree1, MAPE_train_rf1,MAPE_test_rf1,MAPE_train_rf2,MAD_test_rf2 )
+
+```
+
+We run the decision tree and also run random forest on our data, we have calculated the RMSE, MAD and MAPE and we can compare the results now.
+
+```{r}
+
+# lets see the tables
+Accuracy_table_RMSE
+Accuracy_table_MAD
+Accuracy_table_MAPE
+```
+
+Conclusion:
+From the above table, we can conclude that the best model if we select based on RMSE, it should be using Random forest after tunning the parameters.
+
+We have also tried KNN algorithm seperatly on this data and calculate the RMSE which is ~ 86 on the test data. You can find these codes on the github on this link <https://github.com/abdulyunus/KNN-on-Washingtons-Bike-Sharing-Data>.
+
+
+
+
+
+
+
